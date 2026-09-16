@@ -234,62 +234,6 @@ export const validateCreditReconciliation = async (eccRegistryFile, s4FilledFile
   }
 };
 
-// Inventory — upload ECC + S4 files, returns { session_id } used for validation
-// Router: POST /api/inventory/upload
-export const uploadInventoryFiles = async (eccFile, s4File) => {
-  const formData = new FormData();
-  formData.append('ecc_file', eccFile);
-  formData.append('s4_file', s4File);
-
-  try {
-    const response = await fileUploadClient.post('/api/inventory/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    return response.data;
-  } catch (error) {
-    const detail = error.response?.data?.detail;
-    console.error('/api/inventory/upload failed:', detail || error);
-    throw new Error(detail || 'Inventory file upload failed.');
-  }
-};
-
-// Inventory — sample & validate common rows for a previously-uploaded session
-// Router: POST /api/inventory/validate/{session_id}?sample_size=
-export const validateInventory = async (sessionId, sampleSize = 50) => {
-  try {
-    const response = await apiClient.post(
-      `/api/inventory/validate/${sessionId}`,
-      null,
-      { params: { sample_size: sampleSize } }
-    );
-    return response.data;
-  } catch (error) {
-    const detail = error.response?.data?.detail;
-    console.error('/api/inventory/validate failed:', detail || error);
-    throw new Error(detail || 'Inventory validation failed.');
-  }
-};
-
-// Inventory — download the full comparison result for a given download_id
-// Router: GET /api/inventory/download/{download_id}
-export async function downloadInventoryResults(downloadId) {
-  const response = await fetch(`${API_BASE_URL}/api/inventory/download/${downloadId}`, {
-    method: 'GET',
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody.detail || 'Failed to download inventory results.');
-  }
-
-  const blob = await response.blob();
-  const disposition = response.headers.get('Content-Disposition') || '';
-  const match = disposition.match(/filename="?([^"]+)"?/);
-  const filename = match ? match[1] : 'ecc_s4_50_sample.xlsx';
-
-  return { blob, filename };
-}
-
 export async function downloadArCurrencyDump() {
   const response = await fetch(`${API_BASE_URL}/download-ar-currency-dump`, {
     method: 'GET',

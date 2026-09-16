@@ -20,13 +20,22 @@ export default function TabNav({
               <button
                 key={d.key}
                 onClick={() => onDomainChange(d.key)}
-                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                  isActive
+                disabled={d.disabled}
+                title={d.disabled ? 'Coming soon' : undefined}
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors inline-flex items-center gap-2 ${
+                  d.disabled
+                    ? 'border-transparent text-gray-300 cursor-not-allowed'
+                    : isActive
                     ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
                 {d.label}
+                {d.comingSoon && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-400 normal-case">
+                    Soon
+                  </span>
+                )}
               </button>
             );
           })}

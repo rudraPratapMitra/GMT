@@ -8,9 +8,6 @@ import TabNav from './components/shared/TabNav';
 import MigrationTab from './components/fico/MigrationTab';
 import DataValidationTab from './components/fico/DataValidationTab';
 
-// Inventory
-import InventoryValidationTab from './components/inventory/InventoryValidationTab';
-
 import { checkHealth } from './api/client';
 
 // Domain registry — single source of truth for nav + dispatch.
@@ -27,6 +24,8 @@ const DOMAINS = [
     key: 'inventory',
     label: 'Inventory',
     children: null, // single screen — no sub-tabs
+    disabled: true, // placeholder for this iteration — not built yet
+    comingSoon: true,
   },
 ];
 
@@ -58,8 +57,9 @@ function App() {
   // (or null if that domain has no sub-tabs). Without this, going
   // FICO -> Inventory -> FICO would leave activeSubTab stale.
   const handleDomainChange = (domainKey) => {
-    setActiveDomain(domainKey);
     const domain = DOMAINS.find((d) => d.key === domainKey);
+    if (domain?.disabled) return;
+    setActiveDomain(domainKey);
     setActiveSubTab(domain?.children?.[0]?.key ?? null);
   };
 
@@ -86,7 +86,12 @@ function App() {
           <DataValidationTab isConnected={isConnected} />
         )}
 
-        {activeDomain === 'inventory' && <InventoryValidationTab />}
+        {activeDomain === 'inventory' && (
+          <div className="text-center py-16 text-gray-500">
+            <p className="text-lg font-medium">Inventory is coming soon</p>
+            <p className="text-sm mt-1">Not part of this release.</p>
+          </div>
+        )}
       </main>
 
       <Footer />
