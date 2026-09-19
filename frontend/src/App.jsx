@@ -1,108 +1,23 @@
-import React, { useState, useEffect } from 'react';
-
-import Header from './components/shared/Header';
-import Footer from './components/shared/Footer';
-import TabNav from './components/shared/TabNav';
-
-// FICO
-import MigrationTab from './components/fico/MigrationTab';
-import DataValidationTab from './components/fico/DataValidationTab';
-
-import { checkHealth } from './api/client';
-
-// Domain registry — single source of truth for nav + dispatch.
-const DOMAINS = [
-  {
-    key: 'fico',
-    label: 'FICO',
-    children: [
-      { key: 'migration', label: 'Migration' },
-      { key: 'data-validation', label: 'Data Validation' },
-    ],
-  },
-  {
-    key: 'inventory',
-    label: 'Inventory',
-    children: null, // single screen — no sub-tabs
-    disabled: true, // placeholder for this iteration — not built yet
-    comingSoon: true,
-  },
-];
+import { Routes, Route, Navigate } from "react-router-dom";
+import Header from "./components/Header";
+import Navbar from "./components/NavBar";
+import Footer from "./components/Footer";
+import MigrationPage from "./pages/MigrationTab/MigrationPage";
+import ValidationPage from "./pages/ValidationTab/ValidationPage";
 
 function App() {
-  const [activeDomain, setActiveDomain] = useState('fico');
-  const [activeSubTab, setActiveSubTab] = useState('migration');
-
-  const [isConnected, setIsConnected] = useState(false);
-  const [connectionChecked, setConnectionChecked] = useState(false);
-
-  // Connection status lives here, not in either tab — Header needs it
-  // regardless of which tab is active, and it shouldn't re-check every
-  // time someone switches tabs.
-  useEffect(() => {
-    const check = async () => {
-      try {
-        await checkHealth();
-        setIsConnected(true);
-      } catch (error) {
-        setIsConnected(false);
-      } finally {
-        setConnectionChecked(true);
-      }
-    };
-    check();
-  }, []);
-
-  // When switching domains, land on the first sub-tab of the new domain
-  // (or null if that domain has no sub-tabs). Without this, going
-  // FICO -> Inventory -> FICO would leave activeSubTab stale.
-  const handleDomainChange = (domainKey) => {
-    const domain = DOMAINS.find((d) => d.key === domainKey);
-    if (domain?.disabled) return;
-    setActiveDomain(domainKey);
-    setActiveSubTab(domain?.children?.[0]?.key ?? null);
-  };
-
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 to-gray-100">
-      <Header isConnected={isConnected} connectionChecked={connectionChecked} />
-      <TabNav
-        domains={DOMAINS}
-        activeDomain={activeDomain}
-        activeSubTab={activeSubTab}
-        onDomainChange={handleDomainChange}
-        onSubTabChange={setActiveSubTab}
-      />
-
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {activeDomain === 'fico' && activeSubTab === 'migration' && (
-          <MigrationTab
-            isConnected={isConnected}
-            connectionChecked={connectionChecked}
-          />
-        )}
-
-        {activeDomain === 'fico' && activeSubTab === 'data-validation' && (
-          <DataValidationTab isConnected={isConnected} />
-        )}
-
-        {activeDomain === 'inventory' && (
-          <div className="text-center py-16 text-gray-500">
-            <p className="text-lg font-medium">Inventory is coming soon</p>
-            <p className="text-sm mt-1">Not part of this release.</p>
-          </div>
-        )}
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <Header />
+      <Navbar />
+      <main className="flex-1">
+        <Routes>
+          <Route path="/" element={<Navigate to="/migration" replace />} />
+          <Route path="/migration" element={<MigrationPage />} />
+          <Route path="/validation" element={<ValidationPage />} />
+        </Routes>
       </main>
-
       <Footer />
-
-      <style>{`
-        @keyframes slideDown {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-slideDown { animation: slideDown 0.3s ease-out; }
-      `}</style>
     </div>
   );
 }
