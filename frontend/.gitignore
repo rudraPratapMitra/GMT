@@ -23,4 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 # Generated backend reports
-backend/reports/
+reports/
+
+
+# Staged migration data (Excel files)
+backend/ECC_DATA/
+backend/S4_DATA/

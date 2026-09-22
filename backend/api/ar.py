@@ -9,6 +9,7 @@ import openpyxl
 import requests
 from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from requests.auth import HTTPBasicAuth
 
 from backend.models.bsid_odata import BSID_TO_ODATA
@@ -18,6 +19,7 @@ from backend.services.ar_processor import (
     EccDataError, TemplateError, process_ar_records,
 )
 from backend.services.ar_validate import validate_ar_files
+from backend.services.report_generator import generate_ar_validation_report
 
 # ---------------------------------------------------------------------------
 # OData V2 date handling
@@ -70,6 +72,8 @@ SAP_PASSWORD = os.getenv("SAP_PASSWORD")
 # S/4 target — the custom OData service that writes into ZBSID_DEMO_1
 S4_SERVICE_URL = "http://ec2-52-5-159-197.compute-1.amazonaws.com:8080/sap/opu/odata/SAP/ZAR_OPEN_ITEMS_SRV"
 S4_ENTITY_SET  = "ZBSID_S4itemsSet"
+
+REPORTS_DIR = Path("reports")
 
 
 # Maps the UPPERCASE field names produced by ar_processor.py to the
@@ -265,6 +269,45 @@ def run_validation():
         raise HTTPException(422, str(e))
 
     return report
+
+@router.get("/validate/report")
+def download_validation_report():
+    """
+    Re-runs validation against the currently staged ECC/S/4 files and
+    returns a freshly generated PDF report.
+
+    Re-running (instead of caching the last /validate response) means the
+    downloaded report always reflects whatever is staged right now, and it
+    works even if the user refreshed the page after validating.
+    """
+    ecc_path = file_store.latest_ecc_file()
+    s4_path  = file_store.latest_s4_file()
+    if ecc_path is None or s4_path is None:
+        raise HTTPException(409, "Both ECC and S/4 staging files are required.")
+
+    try:
+        report_payload = validate_ar_files(str(ecc_path), str(s4_path))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    output_path = REPORTS_DIR / f"AR_Validation_Report_{datetime.now():%Y%m%d_%H%M%S}.pdf"
+
+    try:
+        pdf_path = generate_ar_validation_report(
+            report_payload,
+            output_path=output_path,
+            source_file_name=ecc_path.name,
+            target_file_name=s4_path.name,
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Report generation failed: {e}")
+
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename=Path(pdf_path).name,
+    )
 
 @router.post("/load-to-s4")
 def load_to_s4():
