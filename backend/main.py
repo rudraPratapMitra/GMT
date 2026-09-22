@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from api.ar import router as ar_router
+from backend.api.ar import router as ar_router
 app=FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -19,3 +19,6 @@ def health():
 
 app.include_router(ar_router,prefix="/ar")
 
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, reload=True)

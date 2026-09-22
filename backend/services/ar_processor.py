@@ -42,7 +42,7 @@ from dataclasses import dataclass
 import openpyxl
 from openpyxl.styles import Font
 
-from . import mappings
+from ..models import mappings
 
 
 # ---------------------------------------------------------------------

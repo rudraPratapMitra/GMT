@@ -1,79 +1,53 @@
-// const BASE_URL = "http://localhost:8000";
-
-// async function request(path) {
-//   const url = `${BASE_URL}${path}`;
-//   const response = await fetch(url, {
-//     headers: { Accept: "application/json" },
-//   });
-
-//   if (!response.ok) {
-//     let detail = `Request failed with status ${response.status}`;
-//     throw new Error(detail);
-//   }
-
-//   return response.json();
-// }
-
-// export async function fetchARData() {
-//   return request("/ar/ecc_data");
-// }
-
 const BASE_URL = "http://localhost:8000";
 
-async function request(path) {
-  const url = `${BASE_URL}${path}`;
-  const response = await fetch(url, {
-    headers: { Accept: "application/json" },
+async function request(path, options = {}) {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    headers: { Accept: "application/json", ...options.headers },
+    ...options,
   });
 
   if (!response.ok) {
-    let detail = `Request failed with status ${response.status}`;
-    throw new Error(detail);
+    let message = `Request failed with status ${response.status}`;
+    try {
+      const { detail } = await response.json();
+      if (typeof detail === "string") message = detail;
+      else if (Array.isArray(detail)) message = detail.map((d) => d.msg).join("; ");
+    } catch {
+      /* not JSON — keep generic */
+    }
+    throw new Error(message);
   }
 
   return response.json();
 }
 
+// Step 1 — fetch ECC rows, backend stages an Excel into ECC_DATA/.
+// Returns: { status, file, record_count, records: [...] }
 export async function fetchARData() {
   return request("/ar/ecc_data");
 }
 
-/**
- * Sends the already-fetched ECC rows to POST /ar/process (the backend does not
- * call SAP again) and resolves with the generated S/4 workbook plus the
- * summary the backend puts in the response headers.
- *
- * Not built on request(): that helper is GET + JSON only, and this call needs
- * a POST body and a binary (.xlsx) response.
- */
-export async function processARData(records) {
-  const response = await fetch(`${BASE_URL}/ar/process`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ records }),
-  });
+// Step 2 — transform the staged ECC file into the S/4 template.
+// No body; backend reads ECC_DATA/ itself.
+// Returns: { status, file, row_count, warning_count }
+export async function processARData() {
+  return request("/ar/process", { method: "POST" });
+}
 
-  if (!response.ok) {
-    let message = `Processing failed with status ${response.status}`;
-    try {
-      // FastAPI: {detail: "text"} for our errors, {detail: [{msg, loc}, ...]} for validation errors
-      const { detail } = await response.json();
-      if (typeof detail === "string") message = detail;
-      else if (Array.isArray(detail)) message = detail.map((d) => d.msg).join("; ");
-    } catch {
-      /* response wasn't JSON - keep the generic message */
-    }
-    throw new Error(message);
-  }
+// Step 3 — cheap preview for the Validate page. No workbook read.
+// Returns: { ecc: {name,size,modified}|null, s4: {...}|null }
+export async function getLatestFiles() {
+  return request("/ar/validate/latest");
+}
 
-  const disposition = response.headers.get("Content-Disposition") ?? "";
-  const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? "AR_S4_Load.xlsx";
+// Step 4 — run all checks.
+// Returns: { process, overall_status, summary, checks: [...] }
+export async function validateAR() {
+  return request("/ar/validate", { method: "POST" });
+}
 
-  return {
-    blob: await response.blob(),
-    filename,
-    recordCount: Number(response.headers.get("X-Record-Count") ?? 0),
-    warningCount: Number(response.headers.get("X-Warning-Count") ?? 0),
-    s4Push: response.headers.get("X-S4-Push") ?? "",
-  };
+// Step 5 — push staged S/4 rows via OData.
+// Returns: { status, success_count, error_count, errors }
+export async function loadToS4() {
+  return request("/ar/load-to-s4", { method: "POST" });
 }

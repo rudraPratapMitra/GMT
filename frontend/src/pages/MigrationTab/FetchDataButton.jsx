@@ -7,7 +7,7 @@ const Fetch_func = {
 
 function FetchDataButton({ process, onDataFetched, loading, setLoading }) {
   const [error, setError] = useState(null);
-  const [rowCount, setRowCount] = useState(null);
+  const [result, setResult] = useState(null);
 
   const handleClick = async () => {
     const fetchFn = Fetch_func[process];
@@ -18,11 +18,12 @@ function FetchDataButton({ process, onDataFetched, loading, setLoading }) {
 
     setLoading(true);
     setError(null);
-    setRowCount(null);
+    setResult(null);
     try {
-      const data = await fetchFn();
-      setRowCount(Array.isArray(data) ? data.length : null);
-      onDataFetched(data);
+      const response = await fetchFn();
+      // Backend returns { status, file, record_count, records: [...] }
+      setResult(response);
+      onDataFetched(response);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -39,9 +40,11 @@ function FetchDataButton({ process, onDataFetched, loading, setLoading }) {
       >
         {loading ? "Fetching..." : "Fetch Data"}
       </button>
-      {rowCount !== null && !error && (
+
+      {result && !error && (
         <p className="text-xs text-emerald-600">
-          Fetched {rowCount} row{rowCount === 1 ? "" : "s"}.
+          Fetched {result.record_count} row{result.record_count === 1 ? "" : "s"}.
+          Staged as <span className="font-mono">{result.file}</span>.
         </p>
       )}
       {error && <p className="text-xs text-red-600">{error}</p>}
