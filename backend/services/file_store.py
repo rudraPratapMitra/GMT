@@ -10,6 +10,14 @@
 # import openpyxl
 
 # from backend.config import ECC_DATA_DIR, S4_DATA_DIR
+# from backend.services.ar_processor import clean_date
+
+# # S/4 fields written as datetime.date objects by ar_processor.transform_record().
+# # json.dumps(..., default=str) stringifies them to ISO ("2026-04-08") when the
+# # sidecar is written; load_s4_rows() must reparse them back into date objects
+# # or _SapJsonEncoder never converts them to OData's /Date(ms)/ format and SAP
+# # rejects the push with CX_SY_CONVERSION_NO_DATE_TIME.
+# S4_DATE_FIELDS = ("BLDAT", "ZFBDT")
 
 
 # def _ensure(folder: Path) -> Path:
@@ -80,8 +88,22 @@
 
 
 # def load_s4_rows() -> list[dict]:
+#     """Read the staged S/4 rows back from the JSON sidecar.
+
+#     save_s4_workbook() writes dates as plain ISO strings (json.dumps has no
+#     native date type), so BLDAT/ZFBDT are reparsed back into datetime.date
+#     objects here -- otherwise push_to_s4()'s OData encoder never recognizes
+#     them as dates and sends the raw string, which SAP rejects."""
 #     sidecar = S4_DATA_DIR / "_s4_rows.json"
-#     return json.loads(sidecar.read_text()) if sidecar.exists() else []
+#     if not sidecar.exists():
+#         return []
+
+#     rows = json.loads(sidecar.read_text())
+#     for row in rows:
+#         for field in S4_DATE_FIELDS:
+#             if row.get(field):
+#                 row[field] = clean_date(row[field])
+#     return rows
 
 
 # def load_warnings() -> list[dict]:
@@ -156,6 +178,41 @@ def read_ecc_workbook(path: Path) -> list[dict]:
         return []
     headers = [str(h) if h is not None else "" for h in rows[0]]
     return [dict(zip(headers, row)) for row in rows[1:]]
+
+
+def remove_ecc_rows(record_indices: list[int]) -> Path:
+    """
+    Deletes specific data rows from the currently staged ECC workbook, in
+    place, and returns its path.
+
+    `record_indices` are 1-based positions among the *data* rows, matching
+    the numbering read_ecc_workbook() hands the processor (row 1 = the
+    first data row, i.e. Excel row 2, since Excel row 1 is the header).
+    This is exactly the "record" number ar_processor.py stamps on each
+    warning/mismatch, so a caller can pass through the `record` values
+    from a /process response's `currency_mismatches` unchanged.
+
+    Edits the single staged file directly rather than going through
+    save_ecc_workbook()'s clear-then-write, since there is already exactly
+    one ECC file staged and its name/identity doesn't need to change.
+    """
+    path = latest_ecc_file()
+    if path is None:
+        raise FileNotFoundError("No ECC file staged.")
+    if not record_indices:
+        return path
+
+    wb = openpyxl.load_workbook(path)
+    ws = wb.active
+
+    # Delete bottom-to-top so earlier deletions don't shift the row
+    # numbers of rows still waiting to be deleted.
+    excel_rows = sorted({idx + 1 for idx in record_indices}, reverse=True)
+    for excel_row in excel_rows:
+        ws.delete_rows(excel_row)
+
+    wb.save(path)
+    return path
 
 
 # --- S/4 side --------------------------------------------------------------
