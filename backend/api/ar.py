@@ -10,6 +10,7 @@
 # from dotenv import load_dotenv
 # from fastapi import APIRouter, HTTPException
 # from fastapi.responses import FileResponse
+# from pydantic import BaseModel
 # from requests.auth import HTTPBasicAuth
 
 # from backend.models.bsid_odata import BSID_TO_ODATA
@@ -74,6 +75,12 @@
 # S4_ENTITY_SET  = "ZBSID_S4itemsSet"
 
 # REPORTS_DIR = Path("reports")
+
+
+# class DeleteMismatchesPayload(BaseModel):
+#     # 1-based "record" numbers from a /process response's
+#     # currency_mismatches, unchanged -- see file_store.remove_ecc_rows().
+#     record_indices: list[int]
 
 
 # # Maps the UPPERCASE field names produced by ar_processor.py to the
@@ -247,7 +254,27 @@
 #         "file": filename,
 #         "row_count": len(result.s4_rows),
 #         "warning_count": len(result.warnings),
+#         "currency_mismatches": result.currency_mismatches,
 #     }
+
+
+# @router.post("/process/delete-mismatches")
+# def delete_mismatches_and_process(payload: DeleteMismatchesPayload):
+#     """
+#     Removes the given rows from the staged ECC workbook, then reprocesses
+#     from scratch -- so the resulting S/4 workbook, row_count and any
+#     remaining warnings all reflect the reduced row set, and a later
+#     /validate won't see the deleted rows' counts leaking in from ECC.
+#     """
+#     if not payload.record_indices:
+#         raise HTTPException(400, "No rows to delete were provided.")
+
+#     try:
+#         file_store.remove_ecc_rows(payload.record_indices)
+#     except FileNotFoundError as e:
+#         raise HTTPException(409, str(e))
+
+#     return process_ar()
 
 # @router.get("/validate/latest")
 # def validate_latest():
@@ -413,7 +440,6 @@
 #         "error_count": len(errors),
 #         "errors": errors,
 #     }
-
 
 import io
 import json
@@ -672,6 +698,7 @@ def process_ar():
         "row_count": len(result.s4_rows),
         "warning_count": len(result.warnings),
         "currency_mismatches": result.currency_mismatches,
+        "deleted_rows_available": file_store.latest_deleted_rows_file() is not None,
     }
 
 
@@ -692,6 +719,25 @@ def delete_mismatches_and_process(payload: DeleteMismatchesPayload):
         raise HTTPException(409, str(e))
 
     return process_ar()
+
+
+@router.get("/process/deleted-rows")
+def download_deleted_rows():
+    """
+    Downloads every row removed via Delete & Process during the current
+    staging session, in the same column layout as the ECC staging file.
+    Reset whenever a fresh ECC fetch is staged (see
+    file_store.save_ecc_workbook).
+    """
+    path = file_store.latest_deleted_rows_file()
+    if path is None:
+        raise HTTPException(404, "No rows have been deleted in this session yet.")
+
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=path.name,
+    )
 
 @router.get("/validate/latest")
 def validate_latest():

@@ -67,6 +67,41 @@
 #     return [dict(zip(headers, row)) for row in rows[1:]]
 
 
+# def remove_ecc_rows(record_indices: list[int]) -> Path:
+#     """
+#     Deletes specific data rows from the currently staged ECC workbook, in
+#     place, and returns its path.
+
+#     `record_indices` are 1-based positions among the *data* rows, matching
+#     the numbering read_ecc_workbook() hands the processor (row 1 = the
+#     first data row, i.e. Excel row 2, since Excel row 1 is the header).
+#     This is exactly the "record" number ar_processor.py stamps on each
+#     warning/mismatch, so a caller can pass through the `record` values
+#     from a /process response's `currency_mismatches` unchanged.
+
+#     Edits the single staged file directly rather than going through
+#     save_ecc_workbook()'s clear-then-write, since there is already exactly
+#     one ECC file staged and its name/identity doesn't need to change.
+#     """
+#     path = latest_ecc_file()
+#     if path is None:
+#         raise FileNotFoundError("No ECC file staged.")
+#     if not record_indices:
+#         return path
+
+#     wb = openpyxl.load_workbook(path)
+#     ws = wb.active
+
+#     # Delete bottom-to-top so earlier deletions don't shift the row
+#     # numbers of rows still waiting to be deleted.
+#     excel_rows = sorted({idx + 1 for idx in record_indices}, reverse=True)
+#     for excel_row in excel_rows:
+#         ws.delete_rows(excel_row)
+
+#     wb.save(path)
+#     return path
+
+
 # # --- S/4 side --------------------------------------------------------------
 
 # def save_s4_workbook(buffer: io.BytesIO, filename: str,
@@ -125,6 +160,14 @@ import openpyxl
 from backend.config import ECC_DATA_DIR, S4_DATA_DIR
 from backend.services.ar_processor import clean_date
 
+# Where rows removed via remove_ecc_rows() are kept for download, in the
+# same column layout as the ECC staging file. Cleared alongside ECC_DATA
+# whenever a fresh ECC fetch is staged (see save_ecc_workbook) -- it's
+# scoped to "rows deleted from the currently staged ECC file", not a
+# permanent log.
+DELETED_DATA_DIR = Path("DELETED_DATA")
+DELETED_ROWS_FILENAME = "Deleted_ECC_Rows.xlsx"
+
 # S/4 fields written as datetime.date objects by ar_processor.transform_record().
 # json.dumps(..., default=str) stringifies them to ISO ("2026-04-08") when the
 # sidecar is written; load_s4_rows() must reparse them back into date objects
@@ -159,6 +202,7 @@ def _latest(folder: Path) -> Path | None:
 
 def save_ecc_workbook(buffer: io.BytesIO, filename: str) -> Path:
     _clear(ECC_DATA_DIR)
+    _clear(DELETED_DATA_DIR)   # a fresh fetch starts a new "session"; drop the old audit trail
     path = _ensure(ECC_DATA_DIR) / filename
     path.write_bytes(buffer.getvalue())
     return path
@@ -183,7 +227,10 @@ def read_ecc_workbook(path: Path) -> list[dict]:
 def remove_ecc_rows(record_indices: list[int]) -> Path:
     """
     Deletes specific data rows from the currently staged ECC workbook, in
-    place, and returns its path.
+    place, and returns its path. The removed rows' original values are
+    kept -- in the same column layout as the ECC file -- in the
+    DELETED_DATA audit workbook (see _append_deleted_rows), so a user can
+    later download exactly what was taken out.
 
     `record_indices` are 1-based positions among the *data* rows, matching
     the numbering read_ecc_workbook() hands the processor (row 1 = the
@@ -205,14 +252,56 @@ def remove_ecc_rows(record_indices: list[int]) -> Path:
     wb = openpyxl.load_workbook(path)
     ws = wb.active
 
+    headers = [cell.value for cell in ws[1]]
+
     # Delete bottom-to-top so earlier deletions don't shift the row
-    # numbers of rows still waiting to be deleted.
+    # numbers of rows still waiting to be deleted, but capture each row's
+    # values before it disappears.
     excel_rows = sorted({idx + 1 for idx in record_indices}, reverse=True)
+    deleted_values = []
     for excel_row in excel_rows:
+        values = [ws.cell(row=excel_row, column=col).value
+                  for col in range(1, ws.max_column + 1)]
+        deleted_values.append(values)
         ws.delete_rows(excel_row)
 
     wb.save(path)
+
+    deleted_values.reverse()  # back to original (ascending) row order
+    _append_deleted_rows(headers, deleted_values)
+
     return path
+
+
+def _append_deleted_rows(headers, rows) -> Path:
+    """Appends rows to the running 'deleted from ECC' workbook for the
+    current staging session. Creates the file (with headers) on first use;
+    later calls in the same session just append more rows underneath, so a
+    user can Delete & Process more than once and still see everything
+    that's been removed so far."""
+    _ensure(DELETED_DATA_DIR)
+    dest = DELETED_DATA_DIR / DELETED_ROWS_FILENAME
+
+    if dest.exists():
+        wb = openpyxl.load_workbook(dest)
+        ws = wb.active
+    else:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Deleted_Rows"
+        ws.append(headers)
+
+    for row in rows:
+        ws.append(row)
+
+    wb.save(dest)
+    return dest
+
+
+def latest_deleted_rows_file() -> Path | None:
+    path = DELETED_DATA_DIR / DELETED_ROWS_FILENAME
+    return path if path.exists() else None
+
 
 
 # --- S/4 side --------------------------------------------------------------

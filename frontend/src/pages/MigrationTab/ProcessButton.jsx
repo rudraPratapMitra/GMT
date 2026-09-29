@@ -1,5 +1,6 @@
 // import { useEffect, useState } from "react";
-// import { processARData } from "../../api/client";
+// import { processARData, deleteMismatchesAndProcess } from "../../api/client";
+// import CurrencyExceptionsPanel from "./CurrencyExceptionsPanel";
 
 // const Process_func = {
 //   ar: processARData,
@@ -9,6 +10,7 @@
 //   const [loading, setLoading] = useState(false);
 //   const [error, setError] = useState(null);
 //   const [result, setResult] = useState(null);
+//   const [deleting, setDeleting] = useState(false);
 
 //   // A new fetch invalidates the previous run's message.
 //   useEffect(() => {
@@ -34,6 +36,21 @@
 //       setError(err.message);
 //     } finally {
 //       setLoading(false);
+//     }
+//   };
+
+//   const handleDeleteAndProcess = async () => {
+//     if (!result?.currency_mismatches?.length) return;
+//     setDeleting(true);
+//     setError(null);
+//     try {
+//       const recordIndices = result.currency_mismatches.map((m) => m.record);
+//       const response = await deleteMismatchesAndProcess(recordIndices);
+//       setResult(response);
+//     } catch (err) {
+//       setError(err.message);
+//     } finally {
+//       setDeleting(false);
 //     }
 //   };
 
@@ -65,6 +82,12 @@
 //         </p>
 //       )}
 //       {error && <p className="text-xs text-red-600">{error}</p>}
+
+//       <CurrencyExceptionsPanel
+//         mismatches={result?.currency_mismatches}
+//         onDeleteAndProcess={handleDeleteAndProcess}
+//         deleting={deleting}
+//       />
 //     </div>
 //   );
 // }
@@ -72,7 +95,7 @@
 // export default ProcessButton;
 
 import { useEffect, useState } from "react";
-import { processARData, deleteMismatchesAndProcess } from "../../api/client";
+import { processARData, deleteMismatchesAndProcess, downloadDeletedRows } from "../../api/client";
 import CurrencyExceptionsPanel from "./CurrencyExceptionsPanel";
 
 const Process_func = {
@@ -84,6 +107,7 @@ function ProcessButton({ hasData, process = "ar" }) {
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [downloadingDeletedRows, setDownloadingDeletedRows] = useState(false);
 
   // A new fetch invalidates the previous run's message.
   useEffect(() => {
@@ -112,6 +136,25 @@ function ProcessButton({ hasData, process = "ar" }) {
     }
   };
 
+  const handleDownloadDeletedRows = async () => {
+    setDownloadingDeletedRows(true);
+    setError(null);
+    try {
+      const blob = await downloadDeletedRows();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "Deleted_ECC_Rows.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDownloadingDeletedRows(false);
+    }
+  };
   const handleDeleteAndProcess = async () => {
     if (!result?.currency_mismatches?.length) return;
     setDeleting(true);
@@ -160,6 +203,9 @@ function ProcessButton({ hasData, process = "ar" }) {
         mismatches={result?.currency_mismatches}
         onDeleteAndProcess={handleDeleteAndProcess}
         deleting={deleting}
+        deletedRowsAvailable={Boolean(result?.deleted_rows_available)}
+        onDownloadDeletedRows={handleDownloadDeletedRows}
+        downloadingDeletedRows={downloadingDeletedRows}
       />
     </div>
   );
