@@ -1,102 +1,3 @@
-// export const BASE_URL = "http://localhost:8000";
-
-// async function request(path, options = {}) {
-//   const response = await fetch(`${BASE_URL}${path}`, {
-//     headers: { Accept: "application/json", ...options.headers },
-//     ...options,
-//   });
-
-//   if (!response.ok) {
-//     let message = `Request failed with status ${response.status}`;
-//     try {
-//       const { detail } = await response.json();
-//       if (typeof detail === "string") message = detail;
-//       else if (Array.isArray(detail)) message = detail.map((d) => d.msg).join("; ");
-//     } catch {
-//       /* not JSON — keep generic */
-//     }
-//     throw new Error(message);
-//   }
-
-//   return response.json();
-// }
-
-// // Connection indicator — pings the backend's /health endpoint.
-// // Returns true/false rather than throwing, since a failed health check is
-// // an expected, routine outcome (backend not started yet, etc.), not an error.
-// export async function checkHealth() {
-//   try {
-//     const response = await fetch(`${BASE_URL}/health`);
-//     return response.ok;
-//   } catch {
-//     return false;
-//   }
-// }
-
-// // Step 1 — fetch ECC rows, backend stages an Excel into ECC_DATA/.
-// // Returns: { status, file, record_count, records: [...] }
-// export async function fetchARData() {
-//   return request("/ar/ecc_data");
-// }
-
-// // Step 2 — transform the staged ECC file into the S/4 template.
-// // No body; backend reads ECC_DATA/ itself.
-// // Returns: { status, file, row_count, warning_count, currency_mismatches }
-// export async function processARData() {
-//   return request("/ar/process", { method: "POST" });
-// }
-
-// // Step 2b — remove rows flagged as currency exceptions from the staged
-// // ECC file, then reprocess. `recordIndices` are the `record` numbers from
-// // a processARData() response's currency_mismatches, passed through as-is.
-// // Returns the same shape as processARData().
-// export async function deleteMismatchesAndProcess(recordIndices) {
-//   return request("/ar/process/delete-mismatches", {
-//     method: "POST",
-//     headers: { "Content-Type": "application/json" },
-//     body: JSON.stringify({ record_indices: recordIndices }),
-//   });
-// }
-
-// // Step 3 — cheap preview for the Validate page. No workbook read.
-// // Returns: { ecc: {name,size,modified}|null, s4: {...}|null }
-// export async function getLatestFiles() {
-//   return request("/ar/validate/latest");
-// }
-
-// // Step 4 — run all checks.
-// // Returns: { process, overall_status, summary, checks: [...] }
-// export async function validateAR() {
-//   return request("/ar/validate", { method: "POST" });
-// }
-
-// // Step 5 — push staged S/4 rows via OData.
-// // Returns: { status, success_count, error_count, errors }
-// export async function loadToS4() {
-//   return request("/ar/load-to-s4", { method: "POST" });
-// }
-
-// // Step 6 — download the PDF validation report for the currently staged
-// // files. Bypasses `request()` since the response body is a PDF blob, not
-// // JSON, on success.
-// export async function downloadValidationReport() {
-//   const response = await fetch(`${BASE_URL}/ar/validate/report`);
-
-//   if (!response.ok) {
-//     let message = `Request failed with status ${response.status}`;
-//     try {
-//       const { detail } = await response.json();
-//       if (typeof detail === "string") message = detail;
-//       else if (Array.isArray(detail)) message = detail.map((d) => d.msg).join("; ");
-//     } catch {
-//       /* not JSON — keep generic */
-//     }
-//     throw new Error(message);
-//   }
-
-//   return response.blob();
-// }
-
 export const BASE_URL = "http://localhost:8000";
 
 async function request(path, options = {}) {
@@ -120,9 +21,23 @@ async function request(path, options = {}) {
   return response.json();
 }
 
+async function requestBlob(path) {
+  const response = await fetch(`${BASE_URL}${path}`);
+  if (!response.ok) {
+    let message = `Request failed with status ${response.status}`;
+    try {
+      const { detail } = await response.json();
+      if (typeof detail === "string") message = detail;
+      else if (Array.isArray(detail)) message = detail.map((d) => d.msg).join("; ");
+    } catch {
+      /* not JSON — keep generic */
+    }
+    throw new Error(message);
+  }
+  return response.blob();
+}
+
 // Connection indicator — pings the backend's /health endpoint.
-// Returns true/false rather than throwing, since a failed health check is
-// an expected, routine outcome (backend not started yet, etc.), not an error.
 export async function checkHealth() {
   try {
     const response = await fetch(`${BASE_URL}/health`);
@@ -133,22 +48,19 @@ export async function checkHealth() {
 }
 
 // Step 1 — fetch ECC rows, backend stages an Excel into ECC_DATA/.
-// Returns: { status, file, record_count, records: [...] }
 export async function fetchARData() {
   return request("/ar/ecc_data");
 }
 
 // Step 2 — transform the staged ECC file into the S/4 template.
-// No body; backend reads ECC_DATA/ itself.
-// Returns: { status, file, row_count, warning_count, currency_mismatches }
+// Returns: { status, file, row_count, warning_count, currency_mismatches,
+//            deleted_rows_available, warning_rows_available, s4_download_url }
 export async function processARData() {
   return request("/ar/process", { method: "POST" });
 }
 
 // Step 2b — remove rows flagged as currency exceptions from the staged
-// ECC file, then reprocess. `recordIndices` are the `record` numbers from
-// a processARData() response's currency_mismatches, passed through as-is.
-// Returns the same shape as processARData().
+// ECC file, then reprocess.
 export async function deleteMismatchesAndProcess(recordIndices) {
   return request("/ar/process/delete-mismatches", {
     method: "POST",
@@ -157,59 +69,57 @@ export async function deleteMismatchesAndProcess(recordIndices) {
   });
 }
 
-// Step 2c — download every row removed via deleteMismatchesAndProcess so
-// far this session, in the same column layout as the ECC staging file.
-// Bypasses `request()` since the response body is an .xlsx blob on
-// success, not JSON.
+// Step 2c — download every row removed via deleteMismatchesAndProcess.
 export async function downloadDeletedRows() {
-  const response = await fetch(`${BASE_URL}/ar/process/deleted-rows`);
-
-  if (!response.ok) {
-    let message = `Request failed with status ${response.status}`;
-    try {
-      const { detail } = await response.json();
-      if (typeof detail === "string") message = detail;
-    } catch {
-      /* not JSON — keep generic */
-    }
-    throw new Error(message);
-  }
-
-  return response.blob();
+  return requestBlob("/ar/process/deleted-rows");
 }
 
-// Step 3 — cheap preview for the Validate page. No workbook read.
-// Returns: { ecc: {name,size,modified}|null, s4: {...}|null }
+// Step 2d — download the rows that carried a transform warning, in the
+// same column layout as the ECC staging file.
+export async function downloadWarningRows() {
+  return requestBlob("/ar/process/warning-rows");
+}
+
+// Step 2e — download the S/4 LTMC workbook generated by the last /process.
+export async function downloadS4Workbook() {
+  return requestBlob("/ar/process/download-s4");
+}
+
+// Step 3 — cheap preview for the Validate page.
 export async function getLatestFiles() {
   return request("/ar/validate/latest");
 }
 
 // Step 4 — run all checks.
-// Returns: { process, overall_status, summary, checks: [...] }
 export async function validateAR() {
   return request("/ar/validate", { method: "POST" });
 }
 
-// Step 5 — push staged S/4 rows via OData.
-// Returns: { status, success_count, error_count, errors }
+// Step 5 — DISABLED. Direct load to S/4 is no longer part of the flow.
+// The S/4 LTMC workbook is the deliverable; see downloadS4Workbook().
+// Kept here only so any stale import doesn't break the build.
 export async function loadToS4() {
-  return request("/ar/load-to-s4", { method: "POST" });
+  throw new Error(
+    "Direct load to S/4 is disabled. Download the S/4 LTMC workbook instead."
+  );
 }
 
-// Step 6 — download the PDF validation report for the currently staged
-// files. Bypasses `request()` since the response body is a PDF blob, not
-// JSON, on success.
+// Step 6 — download the PDF validation report for the currently staged files.
 export async function downloadValidationReport() {
-  const response = await fetch(`${BASE_URL}/ar/validate/report`);
+  return requestBlob("/ar/validate/report");
+}
+
+// Validation Excel: S/4 workbook + ECC source columns next to each mapped column.
+export async function downloadValidationExcel() {
+  const response = await fetch(`${BASE_URL}/ar/validate/report-excel`);
 
   if (!response.ok) {
     let message = `Request failed with status ${response.status}`;
     try {
       const { detail } = await response.json();
       if (typeof detail === "string") message = detail;
-      else if (Array.isArray(detail)) message = detail.map((d) => d.msg).join("; ");
     } catch {
-      /* not JSON — keep generic */
+      /* not JSON, keep generic */
     }
     throw new Error(message);
   }

@@ -25,7 +25,8 @@ import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT

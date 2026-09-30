@@ -1,5 +1,11 @@
 // import { useEffect, useState } from "react";
-// import { getLatestFiles, validateAR, loadToS4 } from "../../api/client";
+// import {
+//   getLatestFiles,
+//   validateAR,
+//   downloadValidationReport,
+//   downloadS4Workbook,
+//   downloadValidationExcel,
+// } from "../../api/client";
 
 // function StatusPill({ status }) {
 //   const color =
@@ -91,11 +97,10 @@
 //   const [report, setReport] = useState(null);
 //   const [validateError, setValidateError] = useState(null);
 
-//   const [loading, setLoading] = useState(false);
-//   const [loadResult, setLoadResult] = useState(null);
-//   const [loadError, setLoadError] = useState(null);
+//   const [downloadingReport, setDownloadingReport] = useState(false);
+//   const [downloadingS4, setDownloadingS4] = useState(false);
+//   const [downloadError, setDownloadError] = useState(null);
 
-//   // Step 3 — auto-load latest staged files on mount.
 //   useEffect(() => {
 //     setFilesLoading(true);
 //     getLatestFiles()
@@ -105,13 +110,11 @@
 //   }, []);
 
 //   const ready = Boolean(files.ecc && files.s4);
-//   const pass = report?.overall_status === "PASS";
 
 //   const onValidate = async () => {
 //     setValidating(true);
 //     setValidateError(null);
 //     setReport(null);
-//     setLoadResult(null);
 //     try {
 //       const r = await validateAR();
 //       setReport(r);
@@ -122,26 +125,56 @@
 //     }
 //   };
 
-//   const onLoad = async () => {
-//     setLoading(true);
-//     setLoadError(null);
-//     setLoadResult(null);
+//   const saveBlob = (blob, filename) => {
+//     const url = window.URL.createObjectURL(blob);
+//     const a = document.createElement("a");
+//     a.href = url;
+//     a.download = filename;
+//     document.body.appendChild(a);
+//     a.click();
+//     a.remove();
+//     window.URL.revokeObjectURL(url);
+//   };
+
+//   // One click downloads both files: the PDF report and the validation Excel.
+//   const onDownloadReport = async () => {
+//     setDownloadingReport(true);
+//     setDownloadError(null);
 //     try {
-//       const r = await loadToS4();
-//       setLoadResult(r);
+//       // Fetch both first so a failure in either one downloads nothing.
+//       const [pdf, xlsx] = await Promise.all([
+//         downloadValidationReport(),
+//         downloadValidationExcel(),
+//       ]);
+//       saveBlob(pdf, "AR_Validation_Report.pdf");
+//       setTimeout(() => saveBlob(xlsx, "AR_Validation_Data.xlsx"), 400);
 //     } catch (e) {
-//       setLoadError(e.message);
+//       setDownloadError(e.message);
 //     } finally {
-//       setLoading(false);
+//       setDownloadingReport(false);
+//     }
+//   };
+
+//   const onDownloadS4 = async () => {
+//     setDownloadingS4(true);
+//     setDownloadError(null);
+//     try {
+//       const blob = await downloadS4Workbook();
+//       saveBlob(blob, files.s4?.name || "AR_S4_Load.xlsx");
+//     } catch (e) {
+//       setDownloadError(e.message);
+//     } finally {
+//       setDownloadingS4(false);
 //     }
 //   };
 
 //   return (
 //     <div className="max-w-5xl mx-auto px-6 py-8 flex flex-col gap-6">
 //       <div>
-//         <h1 className="text-xl font-semibold text-[#0B1F3A]">Validate & Load</h1>
+//         <h1 className="text-xl font-semibold text-[#0B1F3A]">Validate</h1>
 //         <p className="text-sm text-gray-500">
-//           Compare staged ECC and S/4 data, then push the cleaned rows into S/4.
+//           Compare staged ECC and S/4 data, then download the S/4 LTMC workbook
+//           for the standard S/4 import process.
 //         </p>
 //       </div>
 
@@ -187,29 +220,34 @@
 //         </div>
 //       )}
 
-//       {/* --- Load to S/4 --- */}
+//       {/* --- Downloads --- */}
 //       {report && (
 //         <div className="flex flex-col items-start gap-2 border-t border-gray-200 pt-5">
-//           <button
-//             onClick={onLoad}
-//             disabled={!pass || loading}
-//             className="px-5 py-2.5 bg-[#0B1F3A] text-white rounded-lg disabled:opacity-60"
-//             title={!pass ? "Validation must pass before loading" : undefined}
-//           >
-//             {loading ? "Loading into S/4..." : "Load into S/4"}
-//           </button>
-//           {!pass && (
-//             <p className="text-xs text-amber-600">
-//               Load is disabled until validation passes.
-//             </p>
-//           )}
-//           {loadError && <p className="text-xs text-red-600">{loadError}</p>}
-//           {loadResult && (
-//             <p className="text-xs text-emerald-600">
-//               {loadResult.status} — {loadResult.success_count} succeeded,{" "}
-//               {loadResult.error_count} failed.
-//             </p>
-//           )}
+//           <div className="flex flex-wrap gap-3">
+//             <button
+//               onClick={onDownloadS4}
+//               disabled={downloadingS4}
+//               className="px-5 py-2.5 bg-[#0B1F3A] text-white rounded-lg disabled:opacity-60"
+//             >
+//               {downloadingS4 ? "Preparing workbook..." : "Download S/4 Workbook"}
+//             </button>
+//             <button
+//               onClick={onDownloadReport}
+//               disabled={downloadingReport}
+//               className="px-5 py-2.5 border border-[#0B1F3A] text-[#0B1F3A] rounded-lg disabled:opacity-60"
+//             >
+//               {downloadingReport
+//                 ? "Preparing report..."
+//                 : "Download Validation Report + Excel"}
+//             </button>
+//           </div>
+//           {downloadError && <p className="text-xs text-red-600">{downloadError}</p>}
+//           <p className="text-xs text-gray-500">
+//             Direct S/4 loading is disabled. Use the S/4 workbook with the
+//             standard S/4 import process. The validation report downloads as a
+//             PDF plus an Excel file with the ECC source values next to each
+//             mapped S/4 column.
+//           </p>
 //         </div>
 //       )}
 //     </div>
@@ -222,8 +260,8 @@ import { useEffect, useState } from "react";
 import {
   getLatestFiles,
   validateAR,
-  loadToS4,
   downloadValidationReport,
+  downloadValidationExcel,
 } from "../../api/client";
 
 function StatusPill({ status }) {
@@ -316,14 +354,9 @@ function ValidatePage() {
   const [report, setReport] = useState(null);
   const [validateError, setValidateError] = useState(null);
 
-  const [loading, setLoading] = useState(false);
-  const [loadResult, setLoadResult] = useState(null);
-  const [loadError, setLoadError] = useState(null);
-
-  const [downloading, setDownloading] = useState(false);
+  const [downloadingReport, setDownloadingReport] = useState(false);
   const [downloadError, setDownloadError] = useState(null);
 
-  // Step 3 — auto-load latest staged files on mount.
   useEffect(() => {
     setFilesLoading(true);
     getLatestFiles()
@@ -333,13 +366,11 @@ function ValidatePage() {
   }, []);
 
   const ready = Boolean(files.ecc && files.s4);
-  const pass = report?.overall_status === "PASS";
 
   const onValidate = async () => {
     setValidating(true);
     setValidateError(null);
     setReport(null);
-    setLoadResult(null);
     try {
       const r = await validateAR();
       setReport(r);
@@ -350,46 +381,43 @@ function ValidatePage() {
     }
   };
 
+  const saveBlob = (blob, filename) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  // One click downloads both files: the PDF report and the validation Excel.
   const onDownloadReport = async () => {
-    setDownloading(true);
+    setDownloadingReport(true);
     setDownloadError(null);
     try {
-      const blob = await downloadValidationReport();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "AR_Validation_Report.pdf";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      // Fetch both first so a failure in either one downloads nothing.
+      const [pdf, xlsx] = await Promise.all([
+        downloadValidationReport(),
+        downloadValidationExcel(),
+      ]);
+      saveBlob(pdf, "AR_Validation_Report.pdf");
+      setTimeout(() => saveBlob(xlsx, "AR_Validation_Data.xlsx"), 400);
     } catch (e) {
       setDownloadError(e.message);
     } finally {
-      setDownloading(false);
-    }
-  };
-
-  const onLoad = async () => {
-    setLoading(true);
-    setLoadError(null);
-    setLoadResult(null);
-    try {
-      const r = await loadToS4();
-      setLoadResult(r);
-    } catch (e) {
-      setLoadError(e.message);
-    } finally {
-      setLoading(false);
+      setDownloadingReport(false);
     }
   };
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold text-[#0B1F3A]">Validate & Load</h1>
+        <h1 className="text-xl font-semibold text-[#0B1F3A]">Validate</h1>
         <p className="text-sm text-gray-500">
-          Compare staged ECC and S/4 data, then push the cleaned rows into S/4.
+          Compare staged ECC and S/4 data, then download the validation report
+          and Excel.
         </p>
       </div>
 
@@ -435,39 +463,26 @@ function ValidatePage() {
         </div>
       )}
 
-      {/* --- Load to S/4 --- */}
+      {/* --- Downloads --- */}
       {report && (
         <div className="flex flex-col items-start gap-2 border-t border-gray-200 pt-5">
-          <div className="flex gap-3">
-            <button
-              onClick={onLoad}
-              disabled={!pass || loading}
-              className="px-5 py-2.5 bg-[#0B1F3A] text-white rounded-lg disabled:opacity-60"
-              title={!pass ? "Validation must pass before loading" : undefined}
-            >
-              {loading ? "Loading into S/4..." : "Load into S/4"}
-            </button>
+          <div className="flex flex-wrap gap-3">
             <button
               onClick={onDownloadReport}
-              disabled={downloading}
+              disabled={downloadingReport}
               className="px-5 py-2.5 border border-[#0B1F3A] text-[#0B1F3A] rounded-lg disabled:opacity-60"
             >
-              {downloading ? "Preparing report..." : "Download Validation Report"}
+              {downloadingReport
+                ? "Preparing report..."
+                : "Download Validation Report + Excel"}
             </button>
           </div>
-          {!pass && (
-            <p className="text-xs text-amber-600">
-              Load is disabled until validation passes.
-            </p>
-          )}
-          {loadError && <p className="text-xs text-red-600">{loadError}</p>}
-          {loadResult && (
-            <p className="text-xs text-emerald-600">
-              {loadResult.status} — {loadResult.success_count} succeeded,{" "}
-              {loadResult.error_count} failed.
-            </p>
-          )}
           {downloadError && <p className="text-xs text-red-600">{downloadError}</p>}
+          <p className="text-xs text-gray-500">
+            Direct S/4 loading is disabled. The validation report downloads as a
+            PDF plus an Excel file with the ECC source values next to each
+            mapped S/4 column.
+          </p>
         </div>
       )}
     </div>
